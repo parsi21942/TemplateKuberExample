@@ -4,128 +4,118 @@ import com.example.k8sdashboard.dto.DeploymentInfo;
 import com.example.k8sdashboard.service.K8sService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
-@Controller
+@RestController
+@RequestMapping("/api/k8s")
 @RequiredArgsConstructor
 public class K8sController {
 
     private final K8sService k8sService;
 
-    @Value("${k8s.namespace.default:default}")
-    private String defaultNamespace;
-
-    /**
-     * Главная страница.
-     * ?ns=my-namespace  — показать конкретный namespace
-     * ?ns=__all__       — показать все namespace сразу
-     */
-    @GetMapping("/")
-    public String dashboard(@RequestParam(required = false) String ns, Model model) {
-        // Если ns не передан — берём дефолтный
-        if (ns == null || ns.isBlank()) {
-            ns = defaultNamespace;
-        }
-
-        try {
-            // Список всех namespace для табов
-            List<String> namespaces = k8sService.getAllNamespaces();
-            model.addAttribute("namespaces", namespaces);
-            model.addAttribute("currentNs", ns);
-
-            // Деплойменты
-            List<DeploymentInfo> deployments = ns.equals("__all__")
-                    ? k8sService.getAllDeployments()
-                    : k8sService.getDeployments(ns);
-
-            model.addAttribute("deployments", deployments);
-            model.addAttribute("showAll", ns.equals("__all__"));
-
-        } catch (Exception e) {
-            log.error("Failed to load dashboard", e);
-            model.addAttribute("error", "Ошибка: " + e.getMessage());
-        }
-
-        return "dashboard";
+    // GET /api/k8s/namespaces
+    @GetMapping("/namespaces")
+    public ResponseEntity<List<String>> getNamespaces() {
+        return ResponseEntity.ok(k8sService.getAllNamespaces());
     }
 
-    // ---- Actions — namespace передаётся как @RequestParam ----
-
-    @PostMapping("/restart/{name}")
-    public String restart(@PathVariable String name,
-                          @RequestParam String ns,
-                          RedirectAttributes ra) {
-        try {
-            k8sService.restart(ns, name);
-            ra.addFlashAttribute("success", "[" + ns + "] «" + name + "» перезапущен ✓");
-        } catch (Exception e) {
-            ra.addFlashAttribute("error", "Ошибка перезапуска: " + e.getMessage());
-        }
-        return "redirect:/?ns=" + ns;
-    }
-
-    @PostMapping("/stop/{name}")
-    public String stop(@PathVariable String name,
-                       @RequestParam String ns,
-                       RedirectAttributes ra) {
-        try {
-            k8sService.stop(ns, name);
-            ra.addFlashAttribute("success", "[" + ns + "] «" + name + "» остановлен ✓");
-        } catch (Exception e) {
-            ra.addFlashAttribute("error", "Ошибка остановки: " + e.getMessage());
-        }
-        return "redirect:/?ns=" + ns;
-    }
-
-    @PostMapping("/start/{name}")
-    public String start(@PathVariable String name,
-                        @RequestParam String ns,
-                        RedirectAttributes ra) {
-        try {
-            k8sService.start(ns, name);
-            ra.addFlashAttribute("success", "[" + ns + "] «" + name + "» запущен ✓");
-        } catch (Exception e) {
-            ra.addFlashAttribute("error", "Ошибка запуска: " + e.getMessage());
-        }
-        return "redirect:/?ns=" + ns;
-    }
-
-    @PostMapping("/scale/{name}")
-    public String scale(@PathVariable String name,
-                        @RequestParam String ns,
-                        @RequestParam int replicas,
-                        RedirectAttributes ra) {
-        try {
-            k8sService.scale(ns, name, replicas);
-            ra.addFlashAttribute("success",
-                    "[" + ns + "] «" + name + "» → " + replicas + " реплик ✓");
-        } catch (Exception e) {
-            ra.addFlashAttribute("error", "Ошибка масштабирования: " + e.getMessage());
-        }
-        return "redirect:/?ns=" + ns;
-    }
-
-    // ---- REST API ----
-
-    @GetMapping("/api/namespaces")
-    @ResponseBody
-    public List<String> namespacesApi() {
-        return k8sService.getAllNamespaces();
-    }
-
-    @GetMapping("/api/deployments")
-    @ResponseBody
-    public List<DeploymentInfo> deploymentsApi(
-            @RequestParam(defaultValue = "default") String ns) {
-        return ns.equals("__all__")
+    // GET /api/k8s/deployments?ns=default
+    // GET /api/k8s/deployments          (все namespace)
+    @GetMapping("/deployments")
+    public ResponseEntity<List<DeploymentInfo>> getDeployments(
+            @RequestParam(required = false) String ns) {
+        List<DeploymentInfo> result = (ns == null || ns.isBlank())
                 ? k8sService.getAllDeployments()
                 : k8sService.getDeployments(ns);
+        return ResponseEntity.ok(result);
+    }
+
+    // GET /api/k8s/deployments/{name}?ns=default
+    @GetMapping("/deployments/{name}")
+    public ResponseEntity<DeploymentInfo> getDeployment(
+            @PathVariable String name,
+            @RequestParam String ns) {
+        return ResponseEntity.ok(k8sService.getDeployment(ns, name));
+    }
+
+    // POST /api/k8s/deployments/{name}/restart
+    // Body: { "ns": "default" }
+    @PostMapping("/deployments/{name}/restart")
+    public ResponseEntity<Map<String, String>> restart(
+            @PathVariable String name,
+            @RequestBody Map<String, String> body) {
+        String ns = body.get("ns");
+        k8sService.restart(ns, name);
+        return ResponseEntity.ok(Map.of(
+                "status", "ok",
+                "action", "restart",
+                "namespace", ns,
+                "deployment", name
+        ));
+    }
+
+    // POST /api/k8s/deployments/{name}/stop
+    // Body: { "ns": "default" }
+    @PostMapping("/deployments/{name}/stop")
+    public ResponseEntity<Map<String, String>> stop(
+            @PathVariable String name,
+            @RequestBody Map<String, String> body) {
+        String ns = body.get("ns");
+        k8sService.stop(ns, name);
+        return ResponseEntity.ok(Map.of(
+                "status", "ok",
+                "action", "stop",
+                "namespace", ns,
+                "deployment", name
+        ));
+    }
+
+    // POST /api/k8s/deployments/{name}/start
+    // Body: { "ns": "default" }
+    @PostMapping("/deployments/{name}/start")
+    public ResponseEntity<Map<String, String>> start(
+            @PathVariable String name,
+            @RequestBody Map<String, String> body) {
+        String ns = body.get("ns");
+        k8sService.start(ns, name);
+        return ResponseEntity.ok(Map.of(
+                "status", "ok",
+                "action", "start",
+                "namespace", ns,
+                "deployment", name
+        ));
+    }
+
+    // POST /api/k8s/deployments/{name}/scale
+    // Body: { "ns": "default", "replicas": 3 }
+    @PostMapping("/deployments/{name}/scale")
+    public ResponseEntity<Map<String, Object>> scale(
+            @PathVariable String name,
+            @RequestBody Map<String, Object> body) {
+        String ns = (String) body.get("ns");
+        int replicas = (Integer) body.get("replicas");
+        k8sService.scale(ns, name, replicas);
+        return ResponseEntity.ok(Map.of(
+                "status", "ok",
+                "action", "scale",
+                "namespace", ns,
+                "deployment", name,
+                "replicas", replicas
+        ));
+    }
+
+    // Обработка ошибок
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, String>> handleError(Exception e) {
+        log.error("API error: {}", e.getMessage(), e);
+        return ResponseEntity.internalServerError().body(Map.of(
+                "status", "error",
+                "message", e.getMessage()
+        ));
     }
 }
