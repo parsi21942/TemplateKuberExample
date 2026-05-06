@@ -1,7 +1,6 @@
-package com.example.k8sdashboard.service;
+        package com.example.k8sdashboard.service;
 
 import com.example.k8sdashboard.dto.DeploymentInfo;
-import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.apps.DeploymentStatus;
 import io.fabric8.kubernetes.client.Config;
@@ -15,8 +14,10 @@ import org.springframework.stereotype.Service;
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Slf4j
 @Service
@@ -24,6 +25,10 @@ public class K8sService {
 
     @Value("${k8s.kubeconfig}")
     private String kubeconfigPath;
+
+    // Fallback: если нет прав на автоматическое получение namespace
+    @Value("${k8s.namespaces.fallback:default}")
+    private String namespacesFallback;
 
     private KubernetesClient client;
 
@@ -44,29 +49,34 @@ public class K8sService {
     }
 
     // -------------------------------------------------------
-    // Namespaces
+    // Namespaces — hybrid: авто если есть права, иначе fallback
     // -------------------------------------------------------
 
-    /**
-     * Получить список всех доступных namespace в кластере
-     */
     public List<String> getAllNamespaces() {
-        return client.namespaces()
-                .list()
-                .getItems()
-                .stream()
-                .map(ns -> ns.getMetadata().getName())
-                .sorted()
-                .collect(Collectors.toList());
+        try {
+            List<String> namespaces = client.namespaces()
+                    .list()
+                    .getItems()
+                    .stream()
+                    .map(ns -> ns.getMetadata().getName())
+                    .sorted()
+                    .collect(Collectors.toList());
+
+            log.info("Auto-discovered {} namespaces: {}", namespaces.size(), namespaces);
+            return namespaces;
+
+        } catch (Exception e) {
+            List<String> fallback = parseFallback();
+            log.warn("Cannot list namespaces automatically ({}). Using fallback from config: {}",
+                    e.getMessage(), fallback);
+            return fallback;
+        }
     }
 
     // -------------------------------------------------------
     // Deployments
     // -------------------------------------------------------
 
-    /**
-     * Все деплойменты в конкретном namespace
-     */
     public List<DeploymentInfo> getDeployments(String namespace) {
         return client.apps().deployments()
                 .inNamespace(namespace)
@@ -78,21 +88,38 @@ public class K8sService {
     }
 
     /**
-     * Деплойменты во ВСЕХ namespace сразу
+     * Деплойменты из всех namespace.
+     * Пробуем inAnyNamespace() — если нет прав, итерируемся по fallback-списку.
      */
     public List<DeploymentInfo> getAllDeployments() {
-        return client.apps().deployments()
-                .inAnyNamespace()
-                .list()
-                .getItems()
-                .stream()
-                .map(this::toDeploymentInfo)
-                .collect(Collectors.toList());
+        try {
+            List<DeploymentInfo> result = client.apps().deployments()
+                    .inAnyNamespace()
+                    .list()
+                    .getItems()
+                    .stream()
+                    .map(this::toDeploymentInfo)
+                    .collect(Collectors.toList());
+
+            log.info("Loaded {} deployments via inAnyNamespace()", result.size());
+            return result;
+
+        } catch (Exception e) {
+            log.warn("Cannot list all deployments at once ({}). Iterating per namespace.", e.getMessage());
+
+            return getAllNamespaces().stream()
+                    .flatMap(ns -> {
+                        try {
+                            return getDeployments(ns).stream();
+                        } catch (Exception nsEx) {
+                            log.warn("Skipping namespace '{}' — no access: {}", ns, nsEx.getMessage());
+                            return Stream.empty();
+                        }
+                    })
+                    .collect(Collectors.toList());
+        }
     }
 
-    /**
-     * Один деплоймент по имени и namespace
-     */
     public DeploymentInfo getDeployment(String namespace, String name) {
         Deployment dep = client.apps().deployments()
                 .inNamespace(namespace)
@@ -105,38 +132,34 @@ public class K8sService {
     }
 
     // -------------------------------------------------------
-    // Actions — все принимают namespace явно
+    // Actions
     // -------------------------------------------------------
 
     public void restart(String namespace, String name) {
         log.info("Restarting {}/{}", namespace, name);
         client.apps().deployments()
-                .inNamespace(namespace)
-                .withName(name)
+                .inNamespace(namespace).withName(name)
                 .rolling().restart();
     }
 
     public void stop(String namespace, String name) {
         log.info("Stopping {}/{}", namespace, name);
         client.apps().deployments()
-                .inNamespace(namespace)
-                .withName(name)
+                .inNamespace(namespace).withName(name)
                 .scale(0);
     }
 
     public void start(String namespace, String name) {
         log.info("Starting {}/{}", namespace, name);
         client.apps().deployments()
-                .inNamespace(namespace)
-                .withName(name)
+                .inNamespace(namespace).withName(name)
                 .scale(1);
     }
 
     public void scale(String namespace, String name, int replicas) {
         log.info("Scaling {}/{} to {} replicas", namespace, name, replicas);
         client.apps().deployments()
-                .inNamespace(namespace)
-                .withName(name)
+                .inNamespace(namespace).withName(name)
                 .scale(replicas);
     }
 
@@ -153,9 +176,7 @@ public class K8sService {
         return new DeploymentInfo(
                 dep.getMetadata().getName(),
                 dep.getMetadata().getNamespace(),
-                desired,
-                ready,
-                available,
+                desired, ready, available,
                 resolveStatus(desired, ready)
         );
     }
@@ -169,6 +190,13 @@ public class K8sService {
 
     private int getOrZero(Integer v) {
         return v != null ? v : 0;
+    }
+
+    private List<String> parseFallback() {
+        return Arrays.stream(namespacesFallback.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .collect(Collectors.toList());
     }
 
     @PreDestroy
