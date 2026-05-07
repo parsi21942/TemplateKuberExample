@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>K8s Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+        }
+        .main-container {
+            padding: 20px;
+        }
+
+        /* Header — тот же градиент что и на главной */
+        .header-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        /* Stats cards */
+        .stats-card {
+            transition: all 0.3s ease;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .stats-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .stat-icon {
+            font-size: 2rem;
+            opacity: 0.8;
+        }
+
+        /* Table container */
+        .table-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+        .table-header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px 20px;
+        }
+        .table-custom {
+            margin-bottom: 0;
+        }
+        .table-custom thead th {
+            background-color: #34495e;
+            color: white;
+            border: none;
+            padding: 12px 16px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .table-custom tbody tr {
+            transition: background-color 0.2s ease;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .table-custom tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        .table-custom tbody td {
+            padding: 12px 16px;
+            vertical-align: middle;
+            border: none;
+        }
+
+        /* Namespace tabs */
+        .ns-tabs-wrap {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            padding: 14px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .ns-tab-label {
+            font-size: 0.85rem;
+            color: #6c757d;
+            font-weight: 600;
+            margin-right: 4px;
+        }
+        .ns-tab {
+            font-size: 0.8rem;
+            border-radius: 20px;
+            padding: 5px 14px;
+            font-weight: 500;
+            text-decoration: none;
+            border: 1px solid #dee2e6;
+            color: #495057;
+            background: #f8f9fa;
+            transition: all 0.2s;
+        }
+        .ns-tab:hover {
+            background: #e9ecef;
+            color: #2c3e50;
+            border-color: #adb5bd;
+        }
+        .ns-tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        .ns-tab.all-tab.active {
+            background: #764ba2;
+            border-color: #764ba2;
+        }
+
+        /* Status badges */
+        .status-badge-running {
+            background-color: #d4edda;
+            color: #155724;
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .status-badge-stopped {
+            background-color: #f8d7da;
+            color: #721c24;
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .status-badge-partial {
+            background-color: #fff3cd;
+            color: #856404;
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .status-badge-unknown {
+            background-color: #e2e3e5;
+            color: #383d41;
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        /* Status dot animation */
+        .status-dot {
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-dot.running {
+            background-color: #28a745;
+            box-shadow: 0 0 0 2px rgba(40,167,69,0.2);
+            animation: blink 2s ease-in-out infinite;
+        }
+        .status-dot.stopped { background-color: #dc3545; }
+        .status-dot.partial { background-color: #ffc107; }
+        .status-dot.unknown { background-color: #6c757d; }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Namespace pill (в режиме "все") */
+        .ns-pill {
+            background-color: #e8e0f7;
+            color: #6f42c1;
+            font-size: 0.75rem;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-weight: 500;
+        }
+
+        /* Replicas bar */
+        .replicas-bar {
+            height: 4px;
+            border-radius: 2px;
+            background: #e9ecef;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+        .replicas-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.3s;
+        }
+        .replicas-bar-fill.full    { background: #28a745; }
+        .replicas-bar-fill.partial { background: #ffc107; }
+        .replicas-bar-fill.empty   { background: #dc3545; width: 0 !important; }
+
+        /* Action buttons */
+        .btn-action-group {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        /* Scale modal */
+        .scale-input {
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        /* Flash alerts */
+        .flash-alert {
+            animation: slideDown 0.3s ease;
+        }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .no-data {
+            color: #6c757d;
+            font-style: italic;
+        }
+        .quick-link {
+            transition: all 0.3s ease;
+            border-radius: 20px;
+            padding: 8px 16px;
+        }
+        .quick-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+    </style>
+</head>
+<body>
+<div class="main-container">
+
+    <!-- ===== Header ===== -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card header-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h1 class="card-title mb-1">
+                                <i class="bi bi-hdd-network"></i> Kubernetes Dashboard
+                            </h1>
+                            <p class="card-text opacity-75 mb-0">Управление деплойментами кластера</p>
+                        </div>
+                        <div class="text-end d-flex align-items-center gap-3">
+                            <div class="text-white-50 small">
+                                <i class="bi bi-arrow-clockwise"></i>
+                                <span id="refreshCountdown">авто-обновление через 30с</span>
+                            </div>
+                            <div class="btn-group">
+                                <button class="btn btn-light quick-link" onclick="location.reload()">
+                                    <i class="bi bi-arrow-clockwise"></i> Обновить
+                                </button>
+                                <a href="/" class="btn btn-light quick-link ms-2">
+                                    <i class="bi bi-graph-up"></i> Мониторинг
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Flash messages ===== -->
+    <div th:if="${success}" class="alert alert-success alert-dismissible flash-alert" role="alert">
+        <i class="bi bi-check-circle-fill me-2"></i>
+        <span th:text="${success}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    <div th:if="${error}" class="alert alert-danger alert-dismissible flash-alert" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <span th:text="${error}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <!-- ===== Stats cards ===== -->
+    <div class="row mb-4" th:if="${deployments != null}">
+        <div class="col-md-3 mb-3">
+            <div class="card stats-card h-100">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="stat-icon text-primary"><i class="bi bi-boxes"></i></div>
+                    <div>
+                        <div class="text-muted small">Всего деплойментов</div>
+                        <div class="fs-2 fw-bold" th:text="${deployments.size()}">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stats-card h-100">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="stat-icon text-success"><i class="bi bi-check-circle"></i></div>
+                    <div>
+                        <div class="text-muted small">Запущено</div>
+                        <div class="fs-2 fw-bold text-success"
+                             th:text="${#lists.size(deployments.?[status == 'RUNNING'])}">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stats-card h-100">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="stat-icon text-warning"><i class="bi bi-exclamation-circle"></i></div>
+                    <div>
+                        <div class="text-muted small">Частично</div>
+                        <div class="fs-2 fw-bold text-warning"
+                             th:text="${#lists.size(deployments.?[status == 'PARTIAL'])}">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stats-card h-100">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <div class="stat-icon text-danger"><i class="bi bi-x-circle"></i></div>
+                    <div>
+                        <div class="text-muted small">Остановлено</div>
+                        <div class="fs-2 fw-bold text-danger"
+                             th:text="${#lists.size(deployments.?[status == 'STOPPED'])}">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Namespace tabs ===== -->
+    <div class="ns-tabs-wrap" th:if="${namespaces != null}">
+        <span class="ns-tab-label"><i class="bi bi-diagram-3 me-1"></i>Namespace:</span>
+        <a th:href="'/?ns=__all__'"
+           th:classappend="${currentNs == '__all__'} ? ' active' : ''"
+           class="ns-tab all-tab">
+            <i class="bi bi-infinity me-1"></i> Все
+        </a>
+        <a th:each="ns : ${namespaces}"
+           th:href="'/?ns=' + ${ns}"
+           th:classappend="${currentNs == ns} ? ' active' : ''"
+           class="ns-tab">
+            <i class="bi bi-tag me-1"></i>
+            <span th:text="${ns}">ns</span>
+        </a>
+    </div>
+
+    <!-- ===== Deployments table ===== -->
+    <div class="row">
+        <div class="col-12">
+            <div class="table-container" th:if="${deployments != null and !deployments.empty}">
+                <div class="table-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-table"></i>
+                        Деплойменты
+                        <span th:if="${!showAll}">· <span th:text="${currentNs}" class="opacity-75"></span></span>
+                        <span class="badge bg-light text-dark ms-2" th:text="${deployments.size()}"></span>
+                    </h5>
+                    <small class="text-white-50">
+                        <i class="bi bi-info-circle"></i>
+                        Последнее обновление: <span id="lastUpdateTime"></span>
+                    </small>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-custom">
+                        <thead>
+                            <tr>
+                                <th style="width:220px">Деплоймент</th>
+                                <th th:if="${showAll}" style="width:130px">Namespace</th>
+                                <th style="width:130px">Статус</th>
+                                <th style="width:160px">Реплики</th>
+                                <th style="width:200px">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="dep : ${deployments}">
+
+                                <!-- Имя деплоймента -->
+                                <td>
+                                    <strong th:text="${dep.name}">name</strong>
+                                </td>
+
+                                <!-- Namespace (только в режиме "все") -->
+                                <td th:if="${showAll}">
+                                    <span class="ns-pill" th:text="${dep.namespace}">ns</span>
+                                </td>
+
+                                <!-- Статус -->
+                                <td>
+                                    <span th:if="${dep.status == 'RUNNING'}" class="status-badge-running">
+                                        <span class="status-dot running"></span>Работает
+                                    </span>
+                                    <span th:if="${dep.status == 'STOPPED'}" class="status-badge-stopped">
+                                        <span class="status-dot stopped"></span>Остановлен
+                                    </span>
+                                    <span th:if="${dep.status == 'PARTIAL'}" class="status-badge-partial">
+                                        <span class="status-dot partial"></span>Частично
+                                    </span>
+                                    <span th:if="${dep.status == 'UNKNOWN'}" class="status-badge-unknown">
+                                        <span class="status-dot unknown"></span>Неизвестно
+                                    </span>
+                                </td>
+
+                                <!-- Реплики с прогресс-баром -->
+                                <td>
+                                    <div class="small">
+                                        <span class="fw-semibold" th:text="${dep.readyReplicas}">0</span>
+                                        <span class="text-muted"> / </span>
+                                        <span th:text="${dep.replicas}">1</span>
+                                        <span class="text-muted ms-1">готово</span>
+                                    </div>
+                                    <div class="replicas-bar">
+                                        <div class="replicas-bar-fill"
+                                             th:classappend="${dep.replicas == 0} ? 'empty' :
+                                                             (${dep.readyReplicas == dep.replicas} ? 'full' : 'partial')"
+                                             th:style="${dep.replicas > 0} ?
+                                                 'width: ' + ${dep.readyReplicas * 100 / dep.replicas} + '%' :
+                                                 'width: 0%'">
+                                        </div>
+                                    </div>
+                                </td>
+
+                                <!-- Действия -->
+                                <td>
+                                    <div class="btn-action-group">
+
+                                        <!-- Старт (только если остановлен) -->
+                                        <form th:action="'/k8s/start/' + ${dep.name}" method="post"
+                                              th:if="${dep.status == 'STOPPED'}">
+                                            <input type="hidden" name="ns" th:value="${dep.namespace}"/>
+                                            <button type="submit" class="btn btn-success btn-sm"
+                                                    title="Запустить">
+                                                <i class="bi bi-play-fill"></i>
+                                            </button>
+                                        </form>
+
+                                        <!-- Стоп (только если запущен) -->
+                                        <form th:action="'/k8s/stop/' + ${dep.name}" method="post"
+                                              th:if="${dep.status != 'STOPPED'}">
+                                            <input type="hidden" name="ns" th:value="${dep.namespace}"/>
+                                            <button type="submit" class="btn btn-danger btn-sm"
+                                                    th:onclick="|return confirm('Остановить «${dep.name}»?')|"
+                                                    title="Остановить">
+                                                <i class="bi bi-stop-fill"></i>
+                                            </button>
+                                        </form>
+
+                                        <!-- Рестарт -->
+                                        <form th:action="'/k8s/restart/' + ${dep.name}" method="post">
+                                            <input type="hidden" name="ns" th:value="${dep.namespace}"/>
+                                            <button type="submit" class="btn btn-warning btn-sm"
+                                                    th:onclick="|return confirm('Перезапустить «${dep.name}»?')|"
+                                                    title="Перезапустить">
+                                                <i class="bi bi-arrow-clockwise"></i>
+                                            </button>
+                                        </form>
+
+                                        <!-- Scale -->
+                                        <button class="btn btn-outline-secondary btn-sm"
+                                                th:onclick="|openScaleModal('${dep.namespace}', '${dep.name}', ${dep.replicas})|"
+                                                title="Масштабировать">
+                                            <i class="bi bi-arrows-expand"></i>
+                                        </button>
+
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card-footer text-muted d-flex justify-content-between align-items-center">
+                    <small>
+                        <i class="bi bi-info-circle"></i>
+                        Показано деплойментов: <strong th:text="${deployments.size()}"></strong>
+                    </small>
+                    <small class="text-muted">
+                        Namespace: <strong th:text="${showAll ? 'все' : currentNs}"></strong>
+                    </small>
+                </div>
+            </div>
+
+            <!-- Пусто -->
+            <div class="table-container" th:if="${deployments != null and deployments.empty}">
+                <div class="table-header">
+                    <h5 class="mb-0"><i class="bi bi-table"></i> Деплойменты</h5>
+                </div>
+                <div class="text-center py-5">
+                    <i class="bi bi-inbox fs-1 text-muted mb-3 d-block"></i>
+                    <h4 class="text-muted mb-2">Нет деплойментов</h4>
+                    <p class="text-muted mb-0">
+                        Namespace: <strong th:text="${currentNs}"></strong>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Ошибка подключения -->
+            <div class="table-container" th:if="${deployments == null}">
+                <div class="table-header">
+                    <h5 class="mb-0"><i class="bi bi-exclamation-triangle"></i> Ошибка подключения</h5>
+                </div>
+                <div class="text-center py-5">
+                    <i class="bi bi-wifi-off fs-1 text-danger mb-3 d-block"></i>
+                    <h4 class="text-muted mb-2">Не удалось подключиться к Kubernetes</h4>
+                    <p class="text-muted mb-0">
+                        Проверьте <code>k8s.kubeconfig</code> в <code>application.properties</code>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ===== Scale Modal ===== -->
+<div class="modal fade" id="scaleModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header" style="background:#2c3e50; color:white;">
+                <h5 class="modal-title">
+                    <i class="bi bi-arrows-expand"></i> Масштабирование
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-1">Деплоймент:</p>
+                <p class="fw-semibold mb-3" id="modalDepLabel">—</p>
+                <label class="form-label small text-muted">Количество реплик</label>
+                <form method="post" id="scaleForm">
+                    <input type="hidden" name="ns" id="scaleNsInput"/>
+                    <input type="number" name="replicas" id="scaleInput"
+                           class="form-control scale-input mb-3"
+                           min="0" max="20" value="1"/>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary flex-fill"
+                                data-bs-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary flex-fill">Применить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    function openScaleModal(ns, name, currentReplicas) {
+        document.getElementById('modalDepLabel').textContent = ns + ' / ' + name;
+        document.getElementById('scaleInput').value = currentReplicas;
+        document.getElementById('scaleNsInput').value = ns;
+        document.getElementById('scaleForm').action = '/k8s/scale/' + name;
+        new bootstrap.Modal(document.getElementById('scaleModal')).show();
+    }
+
+    // Авто-обновление
+    let countdown = 30;
+    const countdownEl = document.getElementById('refreshCountdown');
+    setInterval(() => {
+        countdown--;
+        if (countdown <= 0) location.reload();
+        else countdownEl.textContent = 'авто-обновление через ' + countdown + 'с';
+    }, 1000);
+
+    // Скрыть flash через 5 секунд
+    setTimeout(() => {
+        document.querySelectorAll('.flash-alert').forEach(el => {
+            bootstrap.Alert.getOrCreateInstance(el).close();
+        });
+    }, 5000);
+
+    // Время обновления
+    function updateTime() {
+        const now = new Date();
+        document.getElementById('lastUpdateTime').textContent =
+            now.toLocaleDateString('ru-RU') + ' ' +
+            now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    updateTime();
+    setInterval(updateTime, 1000);
+</script>
+</body>
+</html>
